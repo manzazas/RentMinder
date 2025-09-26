@@ -62,12 +62,14 @@ function setupDragAndDrop() {
         
         if (!allowedTypes.includes(file.type)) {
             showUploadStatus('error', 'Please upload a PDF, DOC, DOCX, or TXT file.');
+            fileInput.value = '';
             return;
         }
 
         // Validate file size (max 10MB)
         if (file.size > 10 * 1024 * 1024) {
             showUploadStatus('error', 'File size must be less than 10MB.');
+            fileInput.value = '';
             return;
         }
 
@@ -78,6 +80,7 @@ function setupDragAndDrop() {
             showUploadStatus('success', `File "${file.name}" uploaded successfully!`);
             simulateLeaseParsing();
         }, 2000);
+        fileInput.value = '';
     }
 
     function showUploadStatus(type, message) {
