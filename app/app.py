@@ -16,6 +16,8 @@ from app.google_integrations import (
     calendar_service, gmail_service,
     create_rent_event, create_renewal_markers, create_gmail_draft
 )
+from app.parser_gemini import parse_lease_bytes
+from app.mappers import map_zach_to_leaseextract
 
 load_dotenv()
 
@@ -34,26 +36,35 @@ def health():
 # --- Option A: No Storage; proxy to Zach's parser (optional) -----------------
 # Frontend sends the file; backend forwards to Zach; returns parsed JSON (+ save)
 @app.post("/api/parse")
-def parse_proxy():
-    zach_url = os.getenv("ZACH_PARSE_URL")
-    if not zach_url:
-        return jsonify({"error": "ZACH_PARSE_URL not set"}), 400
-
+def parse_and_save():
     if "file" not in request.files:
         return jsonify({"error": "file is required"}), 400
 
     f = request.files["file"]
-    files = {"file": (f.filename, f.stream, f.mimetype or "application/octet-stream")}
-    r = requests.post(zach_url, files=files, timeout=120)
-    if not r.ok:
-        return jsonify({"error": "Parser upstream error", "status": r.status_code, "text": r.text[:2000]}), 502
+    raw = f.read()
+    mime = f.mimetype or "application/pdf"
 
-    parsed = r.json()  # expected to match LeaseExtract schema
-    # Compute flags server-side for consistency
-    parsed["red_flags"] = compute_flags(parsed)
-    user_id = request.form.get("user_id", "demo-user")
-    saved_doc = save_lease(user_id, parsed)
-    return jsonify({"parsed": parsed, "saved": True, "doc": saved_doc})
+    # 1) Gemini → flat (Zach-style)
+    try:
+        flat = parse_lease_bytes(raw, mime)
+    except Exception as e:
+        return jsonify({"error": "gemini_failed", "detail": str(e)}), 500
+
+    # 2) Map → your LeaseExtract schema
+    data = map_zach_to_leaseextract(flat)
+
+    # 3) Validate + compute flags + save
+    try:
+        le = LeaseExtract.model_validate(data)
+    except Exception as e:
+        return jsonify({"error":"Invalid payload from parser","detail":str(e),"raw":flat}), 400
+
+    as_dict = le.model_dump()
+    as_dict["red_flags"] = compute_flags(as_dict)
+    user_id = request.form.get("user_id", "demo")
+    saved_doc = save_lease(user_id, as_dict)
+
+    return jsonify({"parsed": as_dict, "saved": True, "doc": saved_doc})
 
 # --- Save parsed JSON directly (if Zach calls you) ---------------------------
 @app.post("/api/leases/save")
@@ -159,5 +170,4 @@ def firestore_ping():
     doc = {"ping": True, "ts": datetime.utcnow().isoformat()}
     db.collection("le_test").add(doc)
     return {"ok": True, "wrote": doc}
-
-
+    
