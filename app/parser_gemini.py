@@ -14,13 +14,16 @@ Extract lease info. Return ONLY valid JSON (no prose, no backticks) with keys:
   "security_deposit": number|null,
   "lease_start_date": "YYYY-MM-DD" | null,
   "lease_end_date": "YYYY-MM-DD" | null,
-  "rent_due_date": number|null,     // 1..31
-  "late_fee_rule": string|null,
+  "rent_due_date": number|null,     // calendar day 1..31 if stated
+  "late_fee_rule": string|null,     // brief text or null
   "maintenance_contact": string|null,
+  "renewal_notice_start": "YYYY-MM-DD" | null,
+  "renewal_notice_end": "YYYY-MM-DD" | null,
+  "repairs_sla_days": number|null,
   "source_notes": [{ "page": number, "quote": string }]
 }
-Normalize money to numbers (e.g., "$2,350" -> 2350). Use null when unknown.
-Include 1–3 source_notes with page + exact quote supporting key fields.
+Normalize money to numbers; dates to ISO; return null when unknown.
+Include 1-3 source_notes with page + exact quote supporting key fields (rent amount, term, due date if any).
 """
 
 def _clean_number(v):
