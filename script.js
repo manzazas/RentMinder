@@ -75,11 +75,31 @@ function setupDragAndDrop() {
 
         showUploadStatus('processing', 'Processing file...');
         
-        // Simulate file processing (in real app, this would call an API)
-        setTimeout(() => {
-            showUploadStatus('success', `File "${file.name}" uploaded successfully!`);
-            simulateLeaseParsing();
-        }, 2000);
+        // Upload and parse the file using the API
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        fetch('/api/parse', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.parsed) {
+                showUploadStatus('success', `File "${file.name}" parsed successfully!`);
+                
+                // Convert API response to display format
+                const leaseData = convertApiResponseToDisplayData(data.parsed);
+                displayParsedFields(leaseData);
+            } else {
+                showUploadStatus('error', 'Error parsing file: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showUploadStatus('error', 'Error uploading file. Please try again.');
+        });
+        
         fileInput.value = '';
     }
 
@@ -104,6 +124,50 @@ function setupDragAndDrop() {
         }
         
         statusText.textContent = message;
+    }
+}
+
+// ==================== API RESPONSE CONVERSION ====================
+
+function convertApiResponseToDisplayData(parsedData) {
+    // Convert API response format to display format
+    const rent = parsedData.rent || {};
+    const deposit = parsedData.deposit || {};
+    const leaseTerm = parsedData.lease_term || {};
+    const landlord = parsedData.landlord || {};
+    
+    // Format rent amount
+    const rentAmount = rent.amount ? `$${rent.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'Not specified';
+    
+    // Format deposit amount
+    const depositAmount = deposit.amount ? `$${deposit.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'Not specified';
+    
+    // Format due date
+    const dueDate = rent.due_day ? `${rent.due_day}${getOrdinalSuffix(rent.due_day)} of each month` : 'Not specified';
+    
+    return {
+        rent: rentAmount,
+        deposit: depositAmount,
+        leaseStart: leaseTerm.start_date || 'Not specified',
+        leaseEnd: leaseTerm.end_date || 'Not specified',
+        dueDate: dueDate,
+        landlordName: landlord.name || 'Not specified',
+        landlordEmail: landlord.email || 'Not specified',
+        landlordPhone: landlord.phone || 'Not specified',
+        propertyAddress: landlord.address || 'Not specified',
+        tenantName: 'Not specified' // This might need to be added to the schema
+    };
+}
+
+function getOrdinalSuffix(day) {
+    if (day >= 11 && day <= 13) {
+        return 'th';
+    }
+    switch (day % 10) {
+        case 1: return 'st';
+        case 2: return 'nd';
+        case 3: return 'rd';
+        default: return 'th';
     }
 }
 
