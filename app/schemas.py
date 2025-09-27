@@ -51,6 +51,9 @@ class CreateEventsRequest(BaseModel):
     rent_first_due_iso: Optional[str] = None   # 2025-10-01T09:00:00-04:00
     renewal_start_date: Optional[str] = None   # YYYY-MM-DD
     renewal_end_date: Optional[str] = None     # YYYY-MM-DD
+    setup_email_reminders: Optional[bool] = False
+    landlord_email: Optional[str] = None
+    user_email: Optional[str] = None
 
 class GmailDraftRequest(BaseModel):
     access_token: str

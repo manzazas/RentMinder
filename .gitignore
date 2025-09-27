@@ -15,6 +15,7 @@ __MACOSX/
 .env
 secrets/
 *.json
+google-config.js
 
 # Demo outputs
 *.ics

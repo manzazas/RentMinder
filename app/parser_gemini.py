@@ -1,7 +1,7 @@
 import os
 import json
 import base64
-from google import genai
+import google.generativeai as genai
 
 MODEL_NAME = "gemini-2.5-flash"
 
@@ -50,25 +50,19 @@ def parse_lease_bytes(file_bytes: bytes, mime_type: str) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set in environment")
 
-    client = genai.Client(api_key=api_key)
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(MODEL_NAME)
     
     # Convert bytes to base64 string
     pdf_data = base64.b64encode(file_bytes).decode('utf-8')
     
-    contents = [
-        {
-            "inlineData": {
-                "mimeType": mime_type or "application/pdf",
-                "data": pdf_data
-            }
-        },
-        {"text": PROMPT}
-    ]
+    # Create the file part for the model
+    file_part = {
+        "mime_type": mime_type or "application/pdf",
+        "data": pdf_data
+    }
     
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=contents
-    )
+    response = model.generate_content([file_part, PROMPT])
     
     # Clean the response text
     clean_text = response.text.strip()
@@ -88,5 +82,4 @@ def parse_lease_bytes(file_bytes: bytes, mime_type: str) -> dict:
         # helpful debug if model returned junk
         raise RuntimeError(f"Gemini returned non-JSON: {clean_text[:300]}...") from e
     
-    client.close()
     return _postprocess(data)

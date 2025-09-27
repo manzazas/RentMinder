@@ -157,6 +157,13 @@ function displayParsedFields(data) {
 
     // Scroll to parsed fields
     parsedSection.scrollIntoView({ behavior: 'smooth' });
+    
+    // Show the calendar integration section
+    const calendarIntegration = document.getElementById('calendar-integration');
+    calendarIntegration.style.display = 'block';
+    
+    // Store lease data globally for later use
+    window.currentLeaseData = data;
 }
 
 function createFieldCard(field) {
@@ -317,9 +324,14 @@ function sendEmail() {
 function setupActionButtons() {
     const calendarButton = document.getElementById('create-calendar-events');
     const exportButton = document.getElementById('export-report');
+    const googleCalendarBtn = document.getElementById('google-calendar-btn');
 
     calendarButton.addEventListener('click', createCalendarEvents);
     exportButton.addEventListener('click', exportReport);
+    
+    if (googleCalendarBtn) {
+        googleCalendarBtn.addEventListener('click', setupGoogleCalendarIntegration);
+    }
 }
 
 function createCalendarEvents() {
@@ -424,22 +436,55 @@ function addToCalendar(title, date, time) {
 }
 
 function addAllToCalendar() {
-    // Simulate adding all events
+    // Get the lease data and trigger Google OAuth
+    const leaseData = {
+        rent: '$2,500.00',
+        deposit: '$2,500.00',
+        leaseStart: '2024-01-01',
+        leaseEnd: '2024-12-31',
+        dueDate: '1st of each month',
+        landlordName: 'John Smith',
+        landlordEmail: 'john.smith@email.com',
+        landlordPhone: '(555) 123-4567',
+        propertyAddress: '123 Main Street, Anytown, ST 12345',
+        tenantName: 'Jane Doe'
+    };
+    
     const button = event.target;
     const originalText = button.innerHTML;
     
-    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Adding...';
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Connecting to Google...';
     button.disabled = true;
     
-    setTimeout(() => {
-        button.innerHTML = '<i class="bi bi-check"></i> All Added!';
-        button.classList.remove('btn-primary');
-        button.classList.add('btn-success');
-        
-        setTimeout(() => {
-            bootstrap.Modal.getInstance(document.getElementById('calendarModal')).hide();
-        }, 1500);
-    }, 2000);
+    // Initialize Google OAuth
+    gapi.load('auth2', function() {
+        gapi.auth2.init({
+            client_id: '232827582501-jg5m3642e9tkc28tt3hhe2n8reudaqkp.apps.googleusercontent.com'
+        }).then(function() {
+            const authInstance = gapi.auth2.getAuthInstance();
+            
+            authInstance.signIn({
+                scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send'
+            }).then(function(user) {
+                const authResult = user.getAuthResponse();
+                processGoogleAuth(authResult, leaseData);
+                
+                // Update button
+                button.innerHTML = '<i class="bi bi-check"></i> Calendar Events Created!';
+                button.classList.remove('btn-primary');
+                button.classList.add('btn-success');
+                
+                setTimeout(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('calendarModal')).hide();
+                }, 2000);
+            }).catch(function(error) {
+                console.error('Google sign-in failed:', error);
+                button.innerHTML = originalText;
+                button.disabled = false;
+                showNotification('Google sign-in failed. Please try again.', 'danger');
+            });
+        });
+    });
 }
 
 function exportReport() {
@@ -619,3 +664,144 @@ function initializeTooltips() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 }
+
+// Setup Google Calendar Integration
+function setupGoogleCalendarIntegration() {
+    if (!window.currentLeaseData) {
+        showNotification('No lease data available. Please upload and parse a lease first.', 'danger');
+        return;
+    }
+    
+    const button = document.getElementById('google-calendar-btn');
+    const originalText = button.innerHTML;
+    const statusDiv = document.getElementById('calendar-status');
+    
+    // Update button and show status
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Connecting to Google...';
+    button.disabled = true;
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>Initializing Google OAuth...';
+    
+    // Use the modern Google Identity Services approach
+    const initializeGIS = () => {
+        const tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: '232827582501-jg5m3642e9tkc28tt3hhe2n8reudaqkp.apps.googleusercontent.com',
+            scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
+            callback: (tokenResponse) => {
+                if (tokenResponse.access_token) {
+                    statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>Creating calendar events and setting up reminders...';
+                    
+                    // Get user's email using the access token
+                    fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                        headers: {
+                            'Authorization': `Bearer ${tokenResponse.access_token}`
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(userInfo => {
+                        // Convert lease start date to rent_first_due_iso format
+                        const leaseStartDate = new Date(window.currentLeaseData.leaseStart);
+                        const rentFirstDue = new Date(leaseStartDate.getFullYear(), leaseStartDate.getMonth() + 1, 1); // First day of next month
+                        const rentFirstDueIso = rentFirstDue.toISOString().slice(0, 19) + '-05:00'; // Add timezone
+                        
+                        // Convert renewal dates
+                        const leaseEndDate = new Date(window.currentLeaseData.leaseEnd);
+                        const renewalStartDate = new Date(leaseEndDate.getFullYear(), leaseEndDate.getMonth() - 1, 1); // One month before lease end
+                        const renewalEndDate = window.currentLeaseData.leaseEnd; // Use lease end date
+                        
+                        // Prepare data for backend - matching the exact schema
+                        const calendarData = {
+                            access_token: tokenResponse.access_token,
+                            calendar_id: 'primary',
+                            rent_first_due_iso: rentFirstDueIso,
+                            renewal_start_date: renewalStartDate.toISOString().slice(0, 10), // YYYY-MM-DD format
+                            renewal_end_date: renewalEndDate,
+                            setup_email_reminders: true,
+                            landlord_email: window.currentLeaseData.landlordEmail,
+                            user_email: userInfo.email
+                        };
+                        
+                        console.log('Sending calendar data:', calendarData);
+                        
+                        // Send to backend
+                        return fetch('/api/google/events', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(calendarData)
+                        });
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Backend response:', data);
+                        
+                        if (data.ok) {
+                            button.innerHTML = '<i class="bi bi-check-circle"></i> Calendar & Reminders Set Up!';
+                            button.classList.remove('btn-success');
+                            button.classList.add('btn-outline-success');
+                            
+                            let message = 'Successfully connected to Google Calendar and set up rent reminders!';
+                            
+                            // Check if email reminders were set up
+                            if (data.email_reminders_setup && data.created.email_reminder) {
+                                const emailInfo = data.created.email_reminder;
+                                if (emailInfo.confirmation_sent) {
+                                    message += ` A confirmation email has been sent to ${emailInfo.confirmation_to}.`;
+                                }
+                                if (emailInfo.draft_created) {
+                                    message += ' Email reminder drafts have been created.';
+                                }
+                            }
+                            
+                            statusDiv.innerHTML = `<div class="alert alert-success mb-0"><i class="bi bi-check-circle me-2"></i>${message}</div>`;
+                            showNotification('Calendar events created and email reminders set up!', 'success');
+                        } else {
+                            throw new Error(data.error || data.message || 'Unknown error occurred');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                        statusDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Error setting up calendar and reminders. Please try again.</div>';
+                        showNotification('Error setting up calendar and reminders', 'danger');
+                    });
+                } else {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    statusDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Google authentication failed. Please try again.</div>';
+                }
+            }
+        });
+        
+        statusDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>Please sign in to Google...';
+        tokenClient.requestAccessToken();
+    };
+    
+    // Check if Google Identity Services is loaded
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+        initializeGIS();
+    } else {
+        // If not loaded, show error
+        button.innerHTML = originalText;
+        button.disabled = false;
+        statusDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Google services not loaded. Please refresh the page.</div>';
+        showNotification('Google services not loaded. Please refresh the page.', 'danger');
+    }
+}
+
+// ==================== GOOGLE CALENDAR INTEGRATION ====================
+
+// Note: Google Identity Services is loaded via the script tag in index.html
+
+// Load Google API when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Google API will be available via the script tags in the HTML
+    console.log('RentMinder app loaded successfully');
+});
