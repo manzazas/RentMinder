@@ -1,8 +1,9 @@
 import os
 import json
-import google.generativeai as genai
+import base64
+from google import genai
 
-MODEL_NAME = "gemini-1.5-flash-8b"
+MODEL_NAME = "gemini-2.5-flash"
 
 PROMPT = """
 Extract lease info. Return ONLY valid JSON (no prose, no backticks) with keys:
@@ -49,26 +50,43 @@ def parse_lease_bytes(file_bytes: bytes, mime_type: str) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set in environment")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(MODEL_NAME)
-
-    # Build the prompt with inline file data
-    parts = [
-        {"text": PROMPT},
-        {"inline_data": {"mime_type": mime_type or "application/pdf", "data": file_bytes}}
+    client = genai.Client(api_key=api_key)
+    
+    # Convert bytes to base64 string
+    pdf_data = base64.b64encode(file_bytes).decode('utf-8')
+    
+    contents = [
+        {
+            "inlineData": {
+                "mimeType": mime_type or "application/pdf",
+                "data": pdf_data
+            }
+        },
+        {"text": PROMPT}
     ]
-    resp = model.generate_content(parts)
-
-    text = (resp.text or "").strip()
-    # strip accidental code fences if any
-    if text.startswith("```"):
-        text = text.split("```", 2)[1]
-        text = text.replace("json", "", 1).strip()
-    # to JSON
+    
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=contents
+    )
+    
+    # Clean the response text
+    clean_text = response.text.strip()
+    
+    # Remove markdown code blocks if present
+    if clean_text.startswith('```json'):
+        clean_text = clean_text.replace('```json', '').replace('```', '').strip()
+    elif clean_text.startswith('```'):
+        clean_text = clean_text.replace('```', '').strip()
+    
+    # Remove any leading/trailing quotes or other characters that aren't part of JSON
+    clean_text = clean_text[clean_text.find('{'):clean_text.rfind('}') + 1]
+    
     try:
-        data = json.loads(text)
+        data = json.loads(clean_text)
     except Exception as e:
         # helpful debug if model returned junk
-        raise RuntimeError(f"Gemini returned non-JSON: {text[:300]}...") from e
-
+        raise RuntimeError(f"Gemini returned non-JSON: {clean_text[:300]}...") from e
+    
+    client.close()
     return _postprocess(data)
