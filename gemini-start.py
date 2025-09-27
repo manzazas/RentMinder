@@ -41,7 +41,7 @@ Rules:
 """
 
     # Read PDF file and convert to base64
-    with open("files-testing/NY_JohnPork_.pdf", "rb") as pdf_file:
+    with open("NY_Mock_Rental.pdf", "rb") as pdf_file:
         pdf_data = base64.b64encode(pdf_file.read()).decode('utf-8')
 
     contents = [
