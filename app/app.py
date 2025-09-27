@@ -60,7 +60,6 @@ def api_info():
 def health():
     return {"ok": True}
 
-# --- Option A: No Storage; proxy to Zach's parser (optional) -----------------
 # Frontend sends the file; backend forwards to Zach; returns parsed JSON (+ save)
 @app.post("/api/parse")
 def parse_and_save():
@@ -71,7 +70,7 @@ def parse_and_save():
     raw = f.read()
     mime = f.mimetype or "application/pdf"
 
-    # 1) Gemini → flat (Zach-style)
+    # 1) Gemini → flat
     try:
         flat = parse_lease_bytes(raw, mime)
     except Exception as e:
@@ -93,7 +92,7 @@ def parse_and_save():
 
     return jsonify({"parsed": as_dict, "saved": True, "doc": saved_doc})
 
-# --- Save parsed JSON directly (if Zach calls you) ---------------------------
+# --- Save parsed JSON directly ---------------------------
 @app.post("/api/leases/save")
 def save_parsed_lease():
     data = request.get_json(force=True)
