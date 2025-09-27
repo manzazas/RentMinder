@@ -11,7 +11,7 @@ Use this branch for day-to-day backend work; integration happens on `testing-mai
 
 ---
 
-## 🧰 Stack
+## Stack
 
 - **Python 3 / Flask**
 - **Google Generative AI (Gemini)** via `google-generativeai`
