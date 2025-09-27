@@ -1,4 +1,4 @@
-# Lease/FounderOps Copilot – Backend (Flask)
+# RentMinders – Backend (Flask)
 
 ## Setup
 python -m venv .venv && source .venv/bin/activate
